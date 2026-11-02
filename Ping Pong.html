@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ping Pong</title>
+<style>
+:root{
+  --floor:#ffd93a; --ink:#111; --muted:#4a4030;
+  --table:#1e6fe0; --line:#ffffff; --ball:#ffffff; --accent:#ff1a1a;
+  --you:#ff1a1a; --cpu:#262626;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ --floor:#e6b800; --table:#1a5fc4; }
+}
+:root[data-theme="dark"]{ --floor:#e6b800; --table:#1a5fc4; }
+html,body{height:100%;margin:0}
+body{
+  background-color:var(--floor); background-image:radial-gradient(rgba(0,0,0,.13) 2px, transparent 2.6px); background-size:18px 18px;
+  color:var(--ink);
+  font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px;
+  padding:12px; box-sizing:border-box;
+}
+.hud{display:flex; align-items:baseline; justify-content:center; gap:28px; width:min(100%,520px)}
+.who{font-size:16px; font-weight:900; color:var(--ink); text-transform:uppercase; letter-spacing:.05em}
+.score{font-size:clamp(40px,8vw,72px); font-weight:900; font-family:"Arial Black",Impact,sans-serif; font-variant-numeric:tabular-nums; line-height:1; color:#fff; -webkit-text-stroke:3px #000; paint-order:stroke fill; text-shadow:4px 4px 0 #000}
+.hud div{display:flex; align-items:baseline; gap:12px}
+canvas{
+  width:100%; display:block; aspect-ratio:5/8; border-radius:8px;
+  box-shadow:0 0 0 5px #000, 9px 11px 0 5px #000;
+  cursor:none; touch-action:none; background:var(--table);
+}
+.hint{font-size:14px; font-weight:700; color:var(--ink); min-height:20px; text-align:center}
+h1{margin:0; font-size:clamp(28px,6vw,48px); font-family:"Arial Black",Impact,"Trebuchet MS",sans-serif; font-weight:900; font-style:italic; letter-spacing:.02em; line-height:1.1; text-align:center; color:var(--accent); -webkit-text-stroke:3px #000; paint-order:stroke fill; text-shadow:4px 4px 0 #000; text-transform:uppercase}
+.stage{position:relative; width:min(100%,520px,calc((100vh - 190px)*5/8)); min-width:260px}
+.overlay{position:absolute; inset:0; border-radius:8px; background:rgba(255,255,255,.92); display:flex; align-items:center; justify-content:center; padding:12px; box-sizing:border-box; overflow:auto}
+.overlay[hidden]{display:none}
+.panel{display:flex; flex-direction:column; gap:16px; align-items:center; text-align:center; max-width:100%; margin:auto}
+.panel h2{margin:0; font-size:clamp(20px,4vw,28px); font-family:"Arial Black",Impact,sans-serif; text-transform:uppercase}
+.group{display:flex; flex-direction:column; gap:8px; align-items:center}
+.group>span{font-size:14px; font-weight:700; color:var(--muted)}
+.row{display:flex; gap:8px; flex-wrap:wrap; justify-content:center}
+.opt,.menu,.go,.step{font:inherit; font-weight:800; color:var(--ink); background:#fff; border:3px solid #000; border-radius:10px; padding:8px 14px; cursor:pointer; box-shadow:3px 3px 0 #000}
+.opt:active,.menu:active,.go:active,.step:active{transform:translate(2px,2px); box-shadow:1px 1px 0 #000}
+button:disabled{opacity:.4; cursor:default}
+.opt small{display:block; font-size:12px; font-weight:400; color:#555}
+.opt[aria-pressed="true"]{background:var(--accent); color:#fff}
+.opt[aria-pressed="true"] small{color:#ffe3e3}
+.go{background:var(--accent); color:#fff; font-weight:900; padding:10px 28px; font-size:16px}
+.pts{display:flex; align-items:center; gap:14px}
+.pts output{font-size:36px; font-weight:900; min-width:2ch; font-variant-numeric:tabular-nums}
+.step{width:44px; height:44px; padding:0; font-size:22px}
+.menu{padding:4px 12px; font-size:14px}
+.result h2{font-size:clamp(30px,8vw,56px)}
+.final{font-size:clamp(22px,5vw,38px); font-weight:900; font-variant-numeric:tabular-nums}
+.note{font-size:15px; font-weight:700; color:var(--muted)}
+:focus-visible{outline:3px solid #1e6fe0; outline-offset:2px}
+</style>
+</head>
+<body>
+<h1>Ping Pong</h1>
+<div class="hud">
+  <div><span class="who">You</span><span class="score" id="sp">0</span></div>
+  <button class="menu" id="menuBtn" type="button">Settings</button>
+  <input type="hidden" id="lvl" value="1">
+  <div><span class="score" id="sc">0</span><span class="who">AI</span></div>
+</div>
+<div class="stage">
+<canvas id="c" width="500" height="800" aria-label="Ping pong table: move the mouse to move your paddle anywhere on your half, the bottom of the table"></canvas>
+<div class="overlay" id="setup">
+  <div class="panel">
+    <h2>Set up your match</h2>
+    <div class="group"><span>Difficulty</span>
+      <div class="row" id="lvlRow">
+        <button class="opt" type="button" data-lvl="0" aria-pressed="false">Easy<small>Slow ball, big paddle</small></button>
+        <button class="opt" type="button" data-lvl="1" aria-pressed="true">Medium<small>Balanced</small></button>
+        <button class="opt" type="button" data-lvl="2" aria-pressed="false">Hard<small>Fast ball, small paddle</small></button>
+      </div>
+    </div>
+    <div class="group"><span>Points to win</span>
+      <div class="pts">
+        <button class="step" type="button" id="ptsDn" aria-label="Fewer points">−</button>
+        <output id="ptsOut" aria-live="polite">7</output>
+        <button class="step" type="button" id="ptsUp" aria-label="More points">+</button>
+      </div>
+    </div>
+    <button class="go" type="button" id="startBtn">Start match</button>
+  </div>
+</div>
+<div class="overlay result" id="result" role="dialog" aria-labelledby="resTitle" hidden>
+  <div class="panel">
+    <h2 id="resTitle">You win!</h2>
+    <div class="final" id="resScore">You 7 – 0 AI</div>
+    <div class="note" id="resNote"></div>
+    <div class="row">
+      <button class="go" type="button" id="againBtn">Play again</button>
+      <button class="opt" type="button" id="changeBtn">Change settings</button>
+    </div>
+  </div>
+</div>
+</div>
+<div class="hint" id="hint">Choose a difficulty and how many points to play to.</div>
+
+<script>
+const cv=document.getElementById('c'), ctx=cv.getContext('2d');
+const W=500,H=800,R=11; let WIN=7, PR=42;
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+// pr = paddle radius (bigger on easier levels)
+const LV=[{spd:4.2,err:34,react:.45,sp0:3.8,spMax:8,pr:46},{spd:5.6,err:18,react:.7,sp0:4.4,spMax:9,pr:42},{spd:7.4,err:5,react:.95,sp0:5.2,spMax:11,pr:32}];
+const SRf=.8; // sweet-spot radius as a fraction of the paddle radius
+const SW=14; // swing length in frames
+const ZMIN=8, PEAK=60; // ball must be above ZMIN to be hit; PEAK = arc height
+const mk=(x,y)=>({x,y,vx:0,vy:0,cool:0,swing:0,cd:0});
+let you=mk(W/2,H-110), cpu=mk(W/2,70), tgt={x:W/2,y:H-110};
+let ps=0, cs=0, state='setup', ball, aimErr=0, serveDir=-1, shake=0;
+const $=id=>document.getElementById(id);
+const lv=()=>LV[+$('lvl').value];
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
+// dir: +1 = ball heads down toward you, -1 = up toward the AI
+function resetBall(dir){
+  ball={x:W/2,y:H/2,vx:0,vy:0,sp:lv().sp0,trail:[],z:30,vz:0,g:0};
+  serveDir=dir; state='ready';
+}
+// launch the ball in an arc that bounces once on the receiver's half of the table
+function launch(dir){
+  const vy=Math.abs(ball.vy)||1;
+  const yb=H/2+dir*H*.2;
+  const t1=Math.max(20,Math.abs(yb-ball.y)/vy);
+  ball.g=8*PEAK/(t1*t1);
+  ball.vz=ball.g*t1/2-ball.z/t1;
+}
+function serve(){
+  const a=(Math.random()*.6-.3);
+  ball.vy=Math.cos(a)*ball.sp*serveDir; ball.vx=Math.sin(a)*ball.sp;
+  launch(serveDir); state='play'; aimErr=(Math.random()*2-1)*lv().err;
+  $('hint').textContent='';
+}
+function point(who){
+  if(who==='you')ps++; else cs++;
+  $('sp').textContent=ps; $('sc').textContent=cs;
+  if(ps>=WIN||cs>=WIN){
+    state='over'; $('hint').textContent='';
+    setTimeout(()=>{ if(state==='over') showResult(); },700);
+  } else {
+    resetBall(who==='you'?-1:1);
+    $('hint').textContent='Click to serve.';
+  }
+}
+// move a paddle to (x,y) and track its velocity so swings add pace
+function moveTo(p,x,y){
+  const ox=p.x, oy=p.y; p.x=x; p.y=y;
+  p.vx+=((x-ox)-p.vx)*.5; p.vy+=((y-oy)-p.vy)*.5;
+  const m=Math.hypot(p.vx,p.vy); if(m>14){p.vx*=14/m; p.vy*=14/m}
+  if(p.cool>0)p.cool--; if(p.swing>0)p.swing--; if(p.cd>0)p.cd--;
+}
+// Only the center of the paddle hits: the ball must be inside the sweet spot.
+// dir = direction the ball must leave in (-1 up, +1 down)
+function hit(p,dir){
+  if(p.cool>0)return;
+  if(ball.z<ZMIN)return;                  // can't hit it while it's on the table
+  if(p===you&&p.swing<=0)return;          // you only hit while swinging (click)
+  if(ball.vy*dir>0)return;                // ball already heading away
+  const dx=ball.x-p.x, dy=ball.y-p.y, sr=PR*SRf;
+  if(Math.hypot(dx,dy)>sr)return;         // edge of the paddle = miss
+  const off=Math.hypot(dx,dy)/sr; // 0 = dead center, 1 = edge of the sweet spot
+  ball.sp=clamp(ball.sp*(0.88+0.34*(1-off)),lv().sp0*0.8,lv().spMax);
+  const ang=clamp(dx/sr,-1,1)*Math.PI/5+clamp(p.vx*.02,-.3,.3);
+  ball.vy=dir*Math.cos(ang)*ball.sp; ball.vx=Math.sin(ang)*ball.sp; launch(dir);
+  p.cool=10; aimErr=(Math.random()*2-1)*lv().err; shake=3;
+}
+function update(){
+  if(state!=='play'){ ball.x=W/2; ball.y=H/2; }
+  const L=lv();
+  // you: free movement across your half (below the net)
+  moveTo(you, clamp(tgt.x,PR+6,W-PR-6), clamp(tgt.y,H/2+PR+8,H-PR-6));
+  // AI: tracks the ball on its half, steps forward to swing
+  const home=PR+16, maxY=H/2-PR-8;
+  let tx=W/2, ty=home, sx=2.5, rx=.05;
+  if(state==='play'&&ball.vy<0){
+    const t=Math.max(0,(ball.y-home)/-ball.vy);
+    let px=ball.x+ball.vx*t;
+    const span=W-2*R; px=((px-R)%(2*span)+2*span)%(2*span); if(px>span)px=2*span-px; px+=R;
+    tx=px+aimErr; sx=L.spd; rx=L.react;
+    if(ball.y<home+110) ty=Math.min(home+38,maxY);
+  }
+  moveTo(cpu,
+    clamp(cpu.x+clamp((tx-cpu.x)*rx,-sx,sx),PR+6,W-PR-6),
+    clamp(cpu.y+clamp((ty-cpu.y)*.3,-6,6),PR+6,maxY));
+  if(state!=='play')return;
+  ball.trail.push({x:ball.x,y:ball.y}); if(ball.trail.length>10)ball.trail.shift();
+  ball.x+=ball.vx; ball.y+=ball.vy;
+  ball.vz-=ball.g; ball.z+=ball.vz;
+  if(ball.z<=0){ ball.z=0; if(ball.vz<0){ ball.vz=-ball.vz*.85; shake=2; } }
+  if(ball.x<R){ball.x=R;ball.vx=Math.abs(ball.vx)}
+  if(ball.x>W-R){ball.x=W-R;ball.vx=-Math.abs(ball.vx)}
+  hit(you,-1); hit(cpu,1);
+  if(ball.y>H+R*2)point('cpu');
+  if(ball.y<-R*2)point('you');
+}
+// pop-art halftone dots baked once onto the table
+const TEX=document.createElement('canvas'); TEX.width=W; TEX.height=H;
+(()=>{const t=TEX.getContext('2d'); t.fillStyle='rgba(255,255,255,.11)';
+  for(let y=8,r=0;y<H;y+=20,r++)for(let x=(r%2?18:8);x<W;x+=20){t.beginPath();t.arc(x,y,3,0,7);t.fill();}})();
+
+function paddle(p,col,flip){
+  ctx.fillStyle='rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(p.x+6,p.y+9,PR,PR*.92,0,0,7); ctx.fill();
+  ctx.save(); ctx.translate(p.x,p.y);
+  const k=p.swing>0?1-p.swing/SW:0, pulse=Math.sin(k*Math.PI);
+  if(k>0){ctx.strokeStyle='rgba(255,255,255,'+(.9*(1-k))+')';ctx.lineWidth=4;ctx.beginPath();ctx.arc(0,0,PR*(1.05+.6*k),0,7);ctx.stroke();}
+  ctx.scale(1+.2*pulse,1+.2*pulse);
+  ctx.rotate((flip?Math.PI:0)+clamp(p.vx*.03,-.4,.4)+pulse*.35);
+  ctx.lineJoin='round'; ctx.strokeStyle='#000'; ctx.lineWidth=3;
+  const hw=PR*.36, hl=PR*1.0;
+  // black grip with a tan edge stripe
+  ctx.fillStyle='#161616'; ctx.beginPath(); ctx.roundRect(-hw/2,PR-6,hw,hl,hw/2.5); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#f6c98a'; ctx.fillRect(hw/2-hw*.26,PR-1,hw*.16,hl-10);
+  // wooden blade
+  ctx.fillStyle='#fbd68f'; ctx.beginPath(); ctx.arc(0,0,PR,0,7); ctx.fill();
+  // rubber with a slanted cut, clipped to the blade
+  ctx.save(); ctx.beginPath(); ctx.arc(0,0,PR,0,7); ctx.clip();
+  ctx.fillStyle=col; ctx.beginPath(); ctx.moveTo(-PR*1.2,PR*.55); ctx.lineTo(PR*1.2,-PR*.05); ctx.lineTo(PR*1.2,-PR*1.2); ctx.lineTo(-PR*1.2,-PR*1.2); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-PR*1.2,PR*.55); ctx.lineTo(PR*1.2,-PR*.05); ctx.stroke();
+  ctx.restore();
+  ctx.beginPath(); ctx.arc(0,0,PR,0,7); ctx.stroke();
+  // sweet spot ring (the ball must meet the paddle here)
+  ctx.setLineDash([5,4]);
+  ctx.strokeStyle='rgba(0,0,0,.5)'; ctx.lineWidth=3.5; ctx.beginPath(); ctx.arc(0,0,PR*SRf,0,7); ctx.stroke();
+  ctx.strokeStyle='rgba(255,255,255,.95)'; ctx.lineWidth=1.8; ctx.beginPath(); ctx.arc(0,0,PR*SRf,0,7); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(0,0,3,0,7); ctx.fill(); ctx.strokeStyle='#000'; ctx.lineWidth=1.5; ctx.stroke();
+  ctx.restore();
+}
+function draw(){
+  const sy=shake?(Math.random()-.5)*shake:0; if(shake>0)shake-=.5;
+  ctx.save(); ctx.translate(0,sy);
+  ctx.fillStyle=css('--table'); ctx.fillRect(0,0,W,H);
+  ctx.drawImage(TEX,0,0);
+  // chunky white court lines
+  ctx.strokeStyle=css('--line'); ctx.lineWidth=6; ctx.lineJoin='miter'; ctx.strokeRect(12,12,W-24,H-24);
+  ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(W/2,12); ctx.lineTo(W/2,H-12); ctx.stroke();
+  // net: white mesh strip with black outline and posts
+  const my=H/2;
+  ctx.fillStyle='rgba(0,0,0,.3)'; ctx.fillRect(0,my+5,W,12);
+  ctx.fillStyle='#fff'; ctx.fillRect(0,my-8,W,16);
+  ctx.strokeStyle='rgba(0,0,0,.55)'; ctx.lineWidth=1.5;
+  for(let x=10;x<W-8;x+=10){ctx.beginPath();ctx.moveTo(x,my-8);ctx.lineTo(x,my+8);ctx.stroke();}
+  ctx.strokeStyle='#000'; ctx.lineWidth=3.5; ctx.strokeRect(0,my-8,W,16);
+  ctx.fillStyle='#000'; ctx.fillRect(0,my-13,9,26); ctx.fillRect(W-9,my-13,9,26);
+  paddle(cpu,css('--cpu'),true); paddle(you,css('--you'),false);
+  const bz=ball.z||0, rr=R*(1+bz/110);
+  // ball shadow
+  ctx.fillStyle='rgba(0,0,0,'+(.32-.14*Math.min(bz/70,1))+')'; ctx.beginPath(); ctx.ellipse(ball.x+4+bz*.3,ball.y+6+bz*.5,rr,rr*.72,0,0,7); ctx.fill();
+  // comic speed lines trailing behind the ball
+  if(state==='play'){
+    const m=Math.hypot(ball.vx,ball.vy)||1, ux=-ball.vx/m, uy=-ball.vy/m, len=20+ball.sp*3.5;
+    [-.5,0,.5].forEach(o=>{
+      const c=Math.cos(o), s=Math.sin(o), dx=ux*c-uy*s, dy=ux*s+uy*c, nx=-dy, ny=dx;
+      const sx=ball.x+dx*rr*1.4, sy2=ball.y+dy*rr*1.4, l=len*(o?.72:1);
+      ctx.fillStyle='rgba(255,255,255,.8)'; ctx.beginPath();
+      ctx.moveTo(sx+nx*3,sy2+ny*3); ctx.lineTo(sx+dx*l,sy2+dy*l); ctx.lineTo(sx-nx*3,sy2-ny*3); ctx.closePath(); ctx.fill();
+    });
+  }
+  // the ball: white, black outline, curved gray highlight
+  ctx.fillStyle=css('--ball'); ctx.beginPath(); ctx.arc(ball.x,ball.y,rr,0,7); ctx.fill();
+  ctx.strokeStyle='#000'; ctx.lineWidth=3; ctx.stroke();
+  ctx.strokeStyle='#b8b8b8'; ctx.lineWidth=Math.max(1.5,rr*.2); ctx.lineCap='round';
+  ctx.beginPath(); ctx.arc(ball.x,ball.y,rr*.6,-.85,.85); ctx.stroke(); ctx.lineCap='butt';
+  ctx.restore();
+}
+function loop(){update();draw();requestAnimationFrame(loop)}
+function setTgt(cx,cy){
+  const r=cv.getBoundingClientRect();
+  tgt.x=(cx-r.left)/r.width*W; tgt.y=(cy-r.top)/r.height*H;
+}
+window.addEventListener('mousemove',e=>setTgt(e.clientX,e.clientY));
+cv.addEventListener('touchmove',e=>{setTgt(e.touches[0].clientX,e.touches[0].clientY)},{passive:true});
+cv.addEventListener('pointerdown',e=>{
+  setTgt(e.clientX,e.clientY);
+  if(you.cd<=0){you.swing=SW;you.cd=SW+10;}
+  if(state==='ready')serve();
+  else if(state==='over'){ps=cs=0;$('sp').textContent=0;$('sc').textContent=0;resetBall(-1);$('hint').textContent='Click to serve.'}
+});
+
+function showResult(){
+  const won=ps>cs;
+  $('resTitle').textContent=won?'You win!':'AI wins';
+  $('resTitle').style.color=won?'var(--accent)':'#1c1c1c';
+  $('resScore').textContent='You '+ps+' – '+cs+' AI';
+  $('resNote').textContent=(won?'You':'The AI')+' reached '+WIN+(WIN===1?' point':' points')+' first.';
+  $('result').hidden=false; $('againBtn').focus();
+}
+function newGame(){
+  ps=cs=0; $('sp').textContent=0; $('sc').textContent=0;
+  $('result').hidden=true; resetBall(-1);
+  $('hint').textContent='Click to serve. First to '+WIN+' wins.';
+}
+$('againBtn').addEventListener('click',newGame);
+$('changeBtn').addEventListener('click',()=>{
+  $('result').hidden=true; $('setup').hidden=false; state='setup';
+  $('hint').textContent='Choose a difficulty and how many points to play to.';
+  $('startBtn').focus();
+});
+let setLvl=1, setPts=7;
+function showPts(){ $('ptsOut').textContent=setPts; $('ptsDn').disabled=setPts<=1; $('ptsUp').disabled=setPts>=21; }
+document.querySelectorAll('#lvlRow .opt').forEach(b=>b.addEventListener('click',()=>{
+  setLvl=+b.dataset.lvl;
+  document.querySelectorAll('#lvlRow .opt').forEach(o=>o.setAttribute('aria-pressed',o===b));
+}));
+$('ptsDn').addEventListener('click',()=>{ setPts=Math.max(1,setPts-1); showPts(); });
+$('ptsUp').addEventListener('click',()=>{ setPts=Math.min(21,setPts+1); showPts(); });
+$('startBtn').addEventListener('click',()=>{
+  $('lvl').value=setLvl; WIN=setPts; PR=LV[setLvl].pr;
+  cpu=mk(W/2,PR+16); you=mk(clamp(tgt.x,PR+6,W-PR-6),clamp(tgt.y,H/2+PR+8,H-PR-6));
+  ps=cs=0; $('sp').textContent=0; $('sc').textContent=0;
+  $('setup').hidden=true; resetBall(-1);
+  $('hint').textContent='Click to serve. Click to swing, and hit the ball with the center of your paddle once it has bounced; you can\'t hit it while it\'s on the table. First to '+WIN+' wins.';
+});
+$('menuBtn').addEventListener('click',()=>{
+  resetBall(-1); state='setup'; $('setup').hidden=false; $('result').hidden=true;
+  $('hint').textContent='Choose a difficulty and how many points to play to.';
+  $('startBtn').focus();
+});
+showPts(); resetBall(-1); state='setup'; loop();
+</script>
+</body>
+</html>
